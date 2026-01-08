@@ -1,0 +1,139 @@
+{
+  "name": "fishreader",
+  "displayName": "FishReader",
+  "description": "A novel reader.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.107.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+	"*",
+	"onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+	"configuration": {
+		"title": "FishReader",
+		"properties": {
+			"fishreader.defaultBookPath": {
+				"type": "string",
+				"default": "",
+				"description": "默认小说文件路径"
+			}
+		}
+	},
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "fishreader",
+          "title": "FishReader",
+          "icon": "resources/fishreader-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "fishreader": [
+        {
+          "id": "bookChapters",
+          "name": "目录"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "fishreader.refresh",
+        "title": "刷新目录"
+      },
+	  {
+		"command": "fishreader.openChapter",
+		"title": "打开章节"
+	  },
+	  {
+		"command": "fishreader.nextLine",
+		"title": "下一行"
+	  },
+	  {
+		"command": "fishreader.prevLine",
+		"title": "上一行"
+	  },
+	  {
+		"command": "fishreader.nextChapter",
+		"title": "下一章"
+	  },
+	  {
+		"command": "fishreader.prevChapter",
+		"title": "上一章"
+	  },
+	  {
+		"command": "fishreader.showContent",
+		"title": "显示内容"
+	  },
+	  {
+		"command": "fishreader.hideContent",
+		"title": "隐藏内容"
+	  }
+    ],
+	"keybindings": [
+		{
+			"command": "fishreader.nextLine",
+			"key": "alt+k"
+		},
+		{
+			"command": "fishreader.prevLine",
+			"key": "alt+i"
+		},
+		{
+			"command": "fishreader.nextChapter",
+			"key": "alt+j"
+		},
+		{
+			"command": "fishreader.prevChapter",
+			"key": "alt+l"
+		},
+		{
+			"command": "fishreader.showContent",
+			"key": "alt+;"
+		},
+		{
+			"command": "fishreader.hideContent",
+			"key": "alt+'"
+		}
+	],
+    "menus": {
+      "view/title": [
+        {
+          "command": "fishreader.refresh",
+          "when": "view == bookChapters",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.107.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "typescript-eslint": "^8.48.1",
+    "eslint": "^9.39.1",
+    "typescript": "^5.9.3",
+    "ts-loader": "^9.5.4",
+    "webpack": "^5.103.0",
+    "webpack-cli": "^6.0.1",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
