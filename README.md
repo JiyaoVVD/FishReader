@@ -6,6 +6,8 @@
 
 工作摸鱼用小说插件，支持在状态栏阅读，隐蔽程度1000%。
 
+[FishReader GitHub Repository](https://github.com/JiyaoVVD/FishReader)
+
 
 ## Extension Settings
 

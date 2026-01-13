@@ -1,4 +1,4 @@
-import {BookContentTree} from './novel_utils/txt';
+import {BookContentTree} from './novel_utils/book_content_tree';
 
 export class StatusBarReader {
 	private showLength: number = 20;

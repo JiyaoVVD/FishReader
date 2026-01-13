@@ -1,13 +1,17 @@
 import * as vscode from 'vscode';
-import { readBook, BookContentTree } from './novel_utils/txt';
+import {loadNovelDir, loadNovelFile} from './novel_utils/novel_loader';
+import {BookContentTree} from './novel_utils/book_content_tree';
 import {StatusBarReader} from './status_bar_reader';
+import { setFlagsFromString } from 'v8';
 
-export class ChapterTreeDataProvider implements vscode.TreeDataProvider<ChapterTreeItem> {
+export class BookTreeDataProvider implements vscode.TreeDataProvider<BookTreeItem> {
   // 用于树视图刷新的事件触发器[citation:4]
-	private _onDidChangeTreeData: vscode.EventEmitter<ChapterTreeItem | undefined | void> = new vscode.EventEmitter();
-	readonly onDidChangeTreeData: vscode.Event<ChapterTreeItem | undefined | void> = this._onDidChangeTreeData.event;
+	private _onDidChangeTreeData: vscode.EventEmitter<BookTreeItem | undefined | void> = new vscode.EventEmitter();
+	readonly onDidChangeTreeData: vscode.Event<BookTreeItem | undefined | void> = this._onDidChangeTreeData.event;
 
 	private bookData: BookContentTree | undefined;
+
+	private rootItems?: BookTreeItem[] = [];
 
 	// 刷新整个树视图
 	refresh(): void {
@@ -21,11 +25,11 @@ export class ChapterTreeDataProvider implements vscode.TreeDataProvider<ChapterT
 	}
 
 	// 获取树节点的显示项
-	getTreeItem(element: ChapterTreeItem): vscode.TreeItem {
+	getTreeItem(element: BookTreeItem): vscode.TreeItem {
 		return element;
 	}
 
-	getIndex(element: ChapterTreeItem): number {
+	getIndex(element: BookTreeItem): number {
 		if (!this.bookData) {
 			return -1;
 		}
@@ -33,62 +37,117 @@ export class ChapterTreeDataProvider implements vscode.TreeDataProvider<ChapterT
 	}
 
 	// 获取节点的子节点
-	async getChildren(element?: ChapterTreeItem): Promise<ChapterTreeItem[]> {
+	async getChildren(element?: BookTreeItem): Promise<BookTreeItem[]> {
 		if (!this.bookData) {
-			return [new ChapterTreeItem('暂无内容', vscode.TreeItemCollapsibleState.None)];
+			return [new BookTreeItem('暂无内容', vscode.TreeItemCollapsibleState.None)];
 		}
 
-		// 如果没有传入element，则是根节点，这里返回书的直接子节点（即章节）
-		if (!element) {
-			return this.bookData.children?.map(child => 
-			new ChapterTreeItem(
-				child.title || '未命名章节',
-				vscode.TreeItemCollapsibleState.None, // 章节为叶子节点，不可展开
-				child // 将数据保存在item中，便于后续点击时获取
-			)
-			) || [];
+		// 根节点
+		if(!element){
+			// 初始化根节点
+			if(this.bookData.children?.length !== this.rootItems?.length){
+				this.rootItems = this.bookData.children?.map(child => {
+					let childItem = new BookTreeItem(
+						child.title || '未命名',
+						child.type === "chapter" ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed,
+						child // 将数据保存在item中，便于后续点击时获取
+					);
+					return childItem;
+				});
+			}
+			return this.rootItems || [];
 		}
-		// 如果有element，可以根据element的数据返回其子节点（如果你的数据结构是多层级的）
-		return []; // 本例中章节没有子级
+		
+		if(element.chapterData?.type === 'book'){
+			if(element.chapterData?.content?.length === 1){	// 用content长度来判断是否加载
+				let path = element.chapterData?.content?.[0];
+				vscode.window.showInformationMessage(`加载书籍: ${element.label}，路径：${path}`);
+				if(path){
+					loadNovelFile(vscode.Uri.file(path), element.chapterData).then(data =>{
+						// 初始化章节数据
+						if(element.children?.length !== data.children?.length){
+							element.children = data.children?.map(child => {
+								let childItem = new BookTreeItem(
+									child.title || '未命名',
+									vscode.TreeItemCollapsibleState.None,
+									child, // 将数据保存在item中，便于后续点击时获取
+									element
+								);
+								return childItem;
+							});
+							this.refresh();
+						}
+						element.chapterData?.content?.push(""); // 占位，避免重复加载
+					});
+				}
+			}
+		}
+
+		return element.children || [];
 	}
 }
 
 // 自定义的树节点项
-class ChapterTreeItem extends vscode.TreeItem {
+class BookTreeItem extends vscode.TreeItem {
+	children?: BookTreeItem[];
 	constructor(
 		public readonly label: string,
 		public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-		public readonly chapterData?: BookContentTree // 关联的数据
+		public readonly chapterData?: BookContentTree, // 关联的数据
+		public parent?: BookTreeItem
 	) {
 		super(label, collapsibleState);
-		// 可以为节点设置点击命令
-		this.command = {
-		  command: 'fishreader.openChapter',
-		  title: '打开章节',
-		  arguments: [this] // 将节点自身作为参数传递给命令
-		};
+		this.parent = parent;
+		if(this.chapterData?.type === 'chapter'){
+			this.command = {
+				command: 'fishreader.openChapter',
+				title: '打开章节',
+				arguments: [this, this.parent] // 将节点自身作为参数传递给命令
+			};
+		}else if(this.chapterData?.type === 'book'){
+			this.command = {
+				command: 'fishreader.openBook',
+				title: '打开书籍',
+				arguments: [this, this.parent] // 将节点自身作为参数传递给命令
+			};
+		}else if(this.chapterData?.type === 'directory'){
+			this.children = this.chapterData.children?.map(child => {
+				let childItem = new BookTreeItem(
+					child.title || 'unknown_folder',
+					vscode.TreeItemCollapsibleState.Collapsed,
+					child,
+					this
+				);
+				return childItem;
+			});
+		}
+	}
+
+	getIndex(element: BookTreeItem): number{
+		if (!this.chapterData) {
+			return -1;
+		}
+		return this.chapterData.children?.indexOf(element.chapterData!) || -1;
 	}
 }
 
 export function activate(context: vscode.ExtensionContext) {
 	const config = vscode.workspace.getConfiguration('fishreader');
-	const chapterTreeProvider = new ChapterTreeDataProvider();
+	const chapterTreeProvider = new BookTreeDataProvider();
 
 	const statusBarReader = new StatusBarReader();
 
-	let bookPath = config.get<string>("defaultBookPath", "F:/noveltest/test.txt");
-	console.log("Default book path:", bookPath);
-	readBook(vscode.Uri.file(bookPath || "")).then(data => {
+	let bookPath = config.get<string>("defaultBookPath", "F:/noveltest");
+	loadNovelDir(vscode.Uri.file(bookPath || "")).then(data => {
 		chapterTreeProvider.updateBookData(data);
-		statusBarReader.bookData = data;
 		return data;
-	})
+	});
 
 	vscode.workspace.onDidChangeConfiguration(event => {
 		if (event.affectsConfiguration('novelReader.defaultBookPath')) {
 			const newConfig = vscode.workspace.getConfiguration('novelReader');
-			const newBookPath = newConfig.get<string>('defaultBookPath', 'F:/noveltest/test.txt');
-			readBook(vscode.Uri.file(newBookPath || "")).then(data => {
+			const newBookPath = newConfig.get<string>('defaultBookPath', 'F:/noveltest');
+				loadNovelDir(vscode.Uri.file(newBookPath || "")).then(data => {
 				chapterTreeProvider.updateBookData(data);
 				return data;
 			});
@@ -101,12 +160,12 @@ export function activate(context: vscode.ExtensionContext) {
 		0
 	);
 
-	contentStatusBar.text = "$(book) 这里应该是内容"
-	contentStatusBar.tooltip = "正文"
+	contentStatusBar.text = "$(book) 这里应该是内容";
+	contentStatusBar.tooltip = "正文";
 
-	contentStatusBar.show()
+	contentStatusBar.show();
 
-	context.subscriptions.push(contentStatusBar)
+	context.subscriptions.push(contentStatusBar);
 
  	 // 1. 注册树视图
 	const treeView = vscode.window.createTreeView('bookChapters', {
@@ -123,10 +182,14 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
   	// 3. 注册点击章节节点的命令
-	const openChapterCommand = vscode.commands.registerCommand('fishreader.openChapter', (item: ChapterTreeItem) => {
+	const openChapterCommand = vscode.commands.registerCommand('fishreader.openChapter', (item: BookTreeItem, parent: BookTreeItem) => {
+		if (parent.chapterData !== statusBarReader.bookData){
+			statusBarReader.bookData = parent.chapterData;
+		}
 		if (item.chapterData?.content) {
+			vscode.window.showInformationMessage(`打开章节: ${item.label}`);
 			// 在右侧编辑器中打开新文档展示章节内容
-			statusBarReader.setChapter(chapterTreeProvider.getIndex(item));
+			statusBarReader.setChapter(parent.getIndex(item));
 			contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
 		}
 	});
@@ -136,31 +199,59 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showInformationMessage('下一章');
 		statusBarReader.nextChapter();
 		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
-	})
+	});
 	// 注册上一章命令
 	const prevChapterCommand = vscode.commands.registerCommand('fishreader.prevChapter', () => {
 		statusBarReader.prevChapter();
 		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
-	})
+	});
 	// 注册下一行命令
 	const nextLineCommand = vscode.commands.registerCommand('fishreader.nextLine', () => {
 		statusBarReader.nextLine();
 		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
-	})
+	});
 	// 注册上一行命令
 	const prevLineCommand = vscode.commands.registerCommand('fishreader.prevLine', () => {
 		statusBarReader.prevLine();
 		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
-	})
+	});
 	// 注册显示正文命令
 	const showContentCommand = vscode.commands.registerCommand('fishreader.showContent', () => {
 		contentStatusBar.show();
-	})
+	});
 	// 注册隐藏正文命令
 	const hideContentCommand = vscode.commands.registerCommand('fishreader.hideContent', () => {
 		contentStatusBar.hide();
-	})
+	});
+	// 注册打开书籍命令
+	const openBookCommand = vscode.commands.registerCommand('fishreader.openBook', ((item: BookTreeItem, parent: BookTreeItem) => {
+		// if(item.chapterData?.content?.length === 1){	// 用content长度来判断是否加载
+		// 	let path = item.chapterData?.content?.[0];
+		// 	vscode.window.showInformationMessage(`加载书籍: ${item.label}，路径：${path}`);
+		// 	if(path){
+		// 		loadNovelFile(vscode.Uri.file(path), item.chapterData).then(data =>{
+		// 			// 初始化章节数据
+		// 			console.log("loaded book file", data);
+		// 			if(item.children?.length !== data.children?.length){
+		// 				item.children = data.children?.map(child => {
+		// 					let childItem = new BookTreeItem(
+		// 						child.title || '未命名',
+		// 						vscode.TreeItemCollapsibleState.None,
+		// 						child, // 将数据保存在item中，便于后续点击时获取
+		// 						item
+		// 					);
+		// 					return childItem;
+		// 				});
+		// 				chapterTreeProvider.refresh();
+		// 			}
+		// 			item.chapterData?.content?.push(""); // 占位，避免重复加载
+		// 		});
+		// 	}
+		// }
+		statusBarReader.bookData = item.chapterData;
+		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
+	}));
 	
-	context.subscriptions.push(nextChapterCommand, prevChapterCommand, nextLineCommand, prevLineCommand);
+	context.subscriptions.push(nextChapterCommand, prevChapterCommand, nextLineCommand, prevLineCommand, openBookCommand);
 	context.subscriptions.push(treeView, refreshCommand, openChapterCommand, showContentCommand, hideContentCommand);
 }

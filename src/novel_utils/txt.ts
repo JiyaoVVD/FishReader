@@ -1,31 +1,29 @@
 import * as vscode from 'vscode'
+import { getFileName } from './common_utils';
+import { BookContentTree } from './book_content_tree';
+import { readFileWithAutoEncoding } from './encoding_utils';
 
 const chapterReg = /.*(第[\d一二三四五六七八九十]+章|楔子|序章|引子)\s*(.*)/;
 
 let fs = vscode.workspace.fs;
 
-export interface BookContentTree{
-	title?: string;
-	content?: string[];
-	children?: BookContentTree[];
-}
-
-
 export async function readRawTxt(fileUri: vscode.Uri): Promise<string>{
 	let buffer = await fs.readFile(fileUri);
-	return buffer.toString();
+	let { content, encoding, confidence } = await readFileWithAutoEncoding(buffer);
+	return content;
 }
 
 
-export async function readBook(fileUri: vscode.Uri): Promise<BookContentTree> {
+export async function readBook(fileUri: vscode.Uri): Promise<BookContentTree[]> {
     const rawContent: string = await readRawTxt(fileUri);
     if (!rawContent.trim()) {
-        return { title: getFileName(fileUri), children: [] };
+        return [];
     }
 
     const lines = rawContent.split(/\r?\n/);
     const chapters: BookContentTree[] = [];
-    let currentChapter: BookContentTree | null = null;
+    let currentChapter: BookContentTree | null = {title: "header", type: 'chapter'};
+	chapters.push(currentChapter);
     let contentBuffer: string[] = [];
     
     for (const line of lines) {
@@ -41,6 +39,7 @@ export async function readBook(fileUri: vscode.Uri): Promise<BookContentTree> {
             // 创建新章节
             currentChapter = {
                 title: `${match[1]} ${match[2]}`.trim(),
+				type: 'chapter',
             };
             chapters.push(currentChapter);
         } else if (currentChapter) {
@@ -56,20 +55,13 @@ export async function readBook(fileUri: vscode.Uri): Promise<BookContentTree> {
 
     // 如果没有找到章节，将整个内容作为一章
     if (chapters.length === 0) {
-        return {
-            title: getFileName(fileUri),
+        return [{
+            title: "unnamed",
+			type: 'chapter',
             content: rawContent.split(/\r?\n/),
             children: []
-        };
+        }];
     }
     
-    return {
-        title: getFileName(fileUri),
-        children: chapters
-    };
-}
-
-export function getFileName(fileUri: vscode.Uri): string{
-	let fileName = fileUri.path.split('/').pop();
-	return <string>fileName;
+    return chapters;
 }
