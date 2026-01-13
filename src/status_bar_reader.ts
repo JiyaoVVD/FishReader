@@ -1,7 +1,14 @@
 import {BookContentTree} from './novel_utils/book_content_tree';
 
 export class StatusBarReader {
-	private showLength: number = 20;
+	private _showLength: number = 20;
+	get showLength(): number{
+		return this._showLength;
+	}
+	set showLength(value: number){
+		this._showLength = value;
+		this.refreshContent();
+	}
 	private _bookData: BookContentTree | undefined;
 
 	private chapterIndex: number = 0;

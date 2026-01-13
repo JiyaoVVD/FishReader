@@ -5,7 +5,7 @@ import {StatusBarReader} from './status_bar_reader';
 import { setFlagsFromString } from 'v8';
 
 export class BookTreeDataProvider implements vscode.TreeDataProvider<BookTreeItem> {
-  // 用于树视图刷新的事件触发器[citation:4]
+  // 用于树视图刷新的事件触发器
 	private _onDidChangeTreeData: vscode.EventEmitter<BookTreeItem | undefined | void> = new vscode.EventEmitter();
 	readonly onDidChangeTreeData: vscode.Event<BookTreeItem | undefined | void> = this._onDidChangeTreeData.event;
 
@@ -21,7 +21,7 @@ export class BookTreeDataProvider implements vscode.TreeDataProvider<BookTreeIte
 	// 更新数据源
 	updateBookData(newData: BookContentTree): void {
 		this.bookData = newData;
-		this.refresh(); // 数据更新后触发视图刷新[citation:4]
+		this.refresh(); // 数据更新后触发视图刷新
 	}
 
 	// 获取树节点的显示项
@@ -132,25 +132,30 @@ class BookTreeItem extends vscode.TreeItem {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-	const config = vscode.workspace.getConfiguration('fishreader');
 	const chapterTreeProvider = new BookTreeDataProvider();
 
 	const statusBarReader = new StatusBarReader();
 
-	let bookPath = config.get<string>("defaultBookPath", "F:/noveltest");
+	let bookPath = vscode.workspace.getConfiguration('fishreader').get<string>("defaultBookPath", "F:/noveltest");
 	loadNovelDir(vscode.Uri.file(bookPath || "")).then(data => {
 		chapterTreeProvider.updateBookData(data);
 		return data;
 	});
 
 	vscode.workspace.onDidChangeConfiguration(event => {
-		if (event.affectsConfiguration('novelReader.defaultBookPath')) {
-			const newConfig = vscode.workspace.getConfiguration('novelReader');
+		if (event.affectsConfiguration('fishreader.defaultBookPath')) {
+			const newConfig = vscode.workspace.getConfiguration('fishreader');
 			const newBookPath = newConfig.get<string>('defaultBookPath', 'F:/noveltest');
 				loadNovelDir(vscode.Uri.file(newBookPath || "")).then(data => {
 				chapterTreeProvider.updateBookData(data);
 				return data;
 			});
+		}
+		if(event.affectsConfiguration('fishreader.showLength')){
+			const newConfig = vscode.workspace.getConfiguration('fishreader');
+			const newShowLength = newConfig.get<number>('showLength', 20);
+			statusBarReader.showLength = newShowLength;
+			contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
 		}
 	});
 
@@ -162,7 +167,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	contentStatusBar.text = "$(book) 这里应该是内容";
 	contentStatusBar.tooltip = "正文";
-
+	contentStatusBar.command = "fishreader.selectChapter";
 	contentStatusBar.show();
 
 	context.subscriptions.push(contentStatusBar);
@@ -170,9 +175,8 @@ export function activate(context: vscode.ExtensionContext) {
  	 // 1. 注册树视图
 	const treeView = vscode.window.createTreeView('bookChapters', {
 		treeDataProvider: chapterTreeProvider,
-		canSelectMany: false // 是否支持多选[citation:4]
+		canSelectMany: false // 是否支持多选
 	});
-
 
   	// 2. 注册刷新命令（对应package.json中的配置）
 	const refreshCommand = vscode.commands.registerCommand('fishreader.refresh', () => {
@@ -225,33 +229,66 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 	// 注册打开书籍命令
 	const openBookCommand = vscode.commands.registerCommand('fishreader.openBook', ((item: BookTreeItem, parent: BookTreeItem) => {
-		// if(item.chapterData?.content?.length === 1){	// 用content长度来判断是否加载
-		// 	let path = item.chapterData?.content?.[0];
-		// 	vscode.window.showInformationMessage(`加载书籍: ${item.label}，路径：${path}`);
-		// 	if(path){
-		// 		loadNovelFile(vscode.Uri.file(path), item.chapterData).then(data =>{
-		// 			// 初始化章节数据
-		// 			console.log("loaded book file", data);
-		// 			if(item.children?.length !== data.children?.length){
-		// 				item.children = data.children?.map(child => {
-		// 					let childItem = new BookTreeItem(
-		// 						child.title || '未命名',
-		// 						vscode.TreeItemCollapsibleState.None,
-		// 						child, // 将数据保存在item中，便于后续点击时获取
-		// 						item
-		// 					);
-		// 					return childItem;
-		// 				});
-		// 				chapterTreeProvider.refresh();
-		// 			}
-		// 			item.chapterData?.content?.push(""); // 占位，避免重复加载
-		// 		});
-		// 	}
-		// }
 		statusBarReader.bookData = item.chapterData;
 		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
 	}));
+	// 选择章节命令
+	const selectChapterCommand = vscode.commands.registerCommand('fishreader.selectChapter', () => {
+		vscode.window.showQuickPick(
+			statusBarReader.bookData?.children?.map((chapter, index) => ({
+				label: chapter.title || `章节 ${index + 1}`,
+				index: index
+			})) || [],
+			{ placeHolder: '选择章节' }
+		).then(selected => {
+			if (selected) {
+				statusBarReader.setChapter(selected.index);
+				contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
+			}
+		});
+	});
 	
-	context.subscriptions.push(nextChapterCommand, prevChapterCommand, nextLineCommand, prevLineCommand, openBookCommand);
-	context.subscriptions.push(treeView, refreshCommand, openChapterCommand, showContentCommand, hideContentCommand);
+	// 开始在编辑器里输入文本时，自动隐藏状态栏内容
+	const changeDisposable = vscode.workspace.onDidChangeTextDocument((event) => {
+		if(!vscode.workspace.getConfiguration('fishreader').get<boolean>("hideWhenInput", false)){ return; }
+		const { document, contentChanges, reason } = event;
+        
+        // 忽略非用户文件的更改（如输出窗口）
+        if (document.uri.scheme !== 'file' && document.uri.scheme !== 'untitled') {
+            return;
+        }
+
+		contentStatusBar.hide();
+	});
+
+	// 切换文本文件焦点时，隐藏状态栏内容
+	const changeFocusDisposable = vscode.window.onDidChangeActiveTextEditor((editor) => {
+		if (editor && vscode.workspace.getConfiguration('fishreader').get<boolean>("hideWhenSwitchEditor", true)) {
+			contentStatusBar.hide();
+		}
+	});
+
+	// 窗口失去焦点时，隐藏状态栏内容
+	const changeFocusOutDisposable = vscode.window.onDidChangeWindowState((windowState) => {
+		if (!windowState.focused && vscode.workspace.getConfiguration('fishreader').get<boolean>("hideWhenLoseFocus", true)) {
+			contentStatusBar.hide();
+		}
+	});
+
+	context.subscriptions.push(
+		nextChapterCommand,
+		prevChapterCommand,
+		nextLineCommand,
+		prevLineCommand,
+		openBookCommand,
+		treeView,
+		refreshCommand,
+		openChapterCommand,
+		showContentCommand,
+		hideContentCommand,
+		selectChapterCommand,
+		changeDisposable,
+		changeFocusDisposable,
+		changeFocusOutDisposable
+	);
 }

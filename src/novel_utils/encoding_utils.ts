@@ -1,5 +1,3 @@
-import * as vscode from 'vscode';
-import * as fs from 'fs';
 import * as iconv from 'iconv-lite';
 import * as jschardet from 'jschardet';
 

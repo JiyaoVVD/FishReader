@@ -16,11 +16,6 @@ export async function loadNovelDir(dirPath: vscode.Uri): Promise<BookContentTree
 			// 等到实际点开书的时候再去读取内容
 			// 内容里存一下路径方便后续获取
 			children.push({title: getFileName(vscode.Uri.joinPath(dirPath, name)), type: 'book', content: [dirPath.path + "/" + name]});
-			// if(name.endsWith(".txt")){
-			// 	let fileUri = vscode.Uri.joinPath(dirPath, name);
-			// 	let bookData = await readTxtBook(fileUri);
-			// 	children.push(bookData);
-			// }
 		}
 	});
 	return {title: dirPath.path, type: 'directory', children: children};
