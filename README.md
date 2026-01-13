@@ -27,7 +27,11 @@
 
 ## Extension Settings
 
-* `fishreader.defaultBookPath`: 小说文件路径（目前仅支持UTF-8编码的单个txt文件）
+* `fishreader.defaultBookPath`: 小说文件目录
+* `fishreader.hideWhenInput`: 输入时隐藏状态栏内容
+* `fishreader.hideWhenFocusOut`: 切换窗口时隐藏状态栏内容
+* `fishreader.hideWhenSwitchEditor`: 切换文件时隐藏状态栏内容
+* `fishreader.showLength`: 状态栏显示内容的长度
 
 ## Release Notes
 
@@ -40,3 +44,4 @@ Initial release of FishReader
 
 ## TODO:
 
+- 用户数据存储
