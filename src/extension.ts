@@ -1,8 +1,17 @@
 import * as vscode from 'vscode';
 import {loadNovelDir, loadNovelFile} from './novel_utils/novel_loader';
 import {BookContentTree} from './novel_utils/book_content_tree';
-import {StatusBarReader} from './status_bar_reader';
+import {StatusBarReader, ReadingPosition} from './status_bar_reader';
+import { initCacheDir } from './novel_utils/book_cache';
 import { setFlagsFromString } from 'v8';
+
+function saveProgress(globalState: vscode.Memento, bookPath: string, position: ReadingPosition): void {
+	globalState.update(`progress:${bookPath}`, position);
+}
+
+function loadProgress(globalState: vscode.Memento, bookPath: string): ReadingPosition | undefined {
+	return globalState.get<ReadingPosition>(`progress:${bookPath}`);
+}
 
 export class BookTreeDataProvider implements vscode.TreeDataProvider<BookTreeItem> {
   // 用于树视图刷新的事件触发器
@@ -33,7 +42,7 @@ export class BookTreeDataProvider implements vscode.TreeDataProvider<BookTreeIte
 		if (!this.bookData) {
 			return -1;
 		}
-		return this.bookData.children?.indexOf(element.chapterData!) || -1;
+		return this.bookData.children?.indexOf(element.chapterData!) ?? -1;
 	}
 
 	// 获取节点的子节点
@@ -127,7 +136,7 @@ class BookTreeItem extends vscode.TreeItem {
 		if (!this.chapterData) {
 			return -1;
 		}
-		return this.chapterData.children?.indexOf(element.chapterData!) || -1;
+		return this.chapterData.children?.indexOf(element.chapterData!) ?? -1;
 	}
 }
 
@@ -135,12 +144,38 @@ export function activate(context: vscode.ExtensionContext) {
 	const chapterTreeProvider = new BookTreeDataProvider();
 
 	const statusBarReader = new StatusBarReader();
+	let currentBookPath: string | undefined;
+
+	// Initialize cache directory
+	initCacheDir(context.globalStorageUri);
 
 	let bookPath = vscode.workspace.getConfiguration('fishreader').get<string>("defaultBookPath", "F:/noveltest");
 	loadNovelDir(vscode.Uri.file(bookPath || "")).then(data => {
 		chapterTreeProvider.updateBookData(data);
 		return data;
 	});
+
+	// Restore last reading position
+	const lastBook = context.globalState.get<string>('lastBook');
+	if (lastBook) {
+		vscode.workspace.fs.stat(vscode.Uri.file(lastBook)).then(
+			() => {
+				// File exists — load the book and restore progress
+				loadNovelFile(vscode.Uri.file(lastBook)).then(bookData => {
+					statusBarReader.bookData = bookData;
+					currentBookPath = lastBook;
+					const savedProgress = loadProgress(context.globalState, lastBook);
+					if (savedProgress) {
+						statusBarReader.setPosition(savedProgress);
+					}
+					contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
+				});
+			},
+			() => {
+				// File no longer exists — silently skip
+			}
+		);
+	}
 
 	vscode.workspace.onDidChangeConfiguration(event => {
 		if (event.affectsConfiguration('fishreader.defaultBookPath')) {
@@ -195,6 +230,10 @@ export function activate(context: vscode.ExtensionContext) {
 			// 在右侧编辑器中打开新文档展示章节内容
 			statusBarReader.setChapter(parent.getIndex(item));
 			contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
+			if (currentBookPath) {
+				context.globalState.update('lastBook', currentBookPath);
+				saveProgress(context.globalState, currentBookPath, statusBarReader.getPosition());
+			}
 		}
 	});
 
@@ -203,21 +242,25 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showInformationMessage('下一章');
 		statusBarReader.nextChapter();
 		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
+		if (currentBookPath) { saveProgress(context.globalState, currentBookPath, statusBarReader.getPosition()); }
 	});
 	// 注册上一章命令
 	const prevChapterCommand = vscode.commands.registerCommand('fishreader.prevChapter', () => {
 		statusBarReader.prevChapter();
 		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
+		if (currentBookPath) { saveProgress(context.globalState, currentBookPath, statusBarReader.getPosition()); }
 	});
 	// 注册下一行命令
 	const nextLineCommand = vscode.commands.registerCommand('fishreader.nextLine', () => {
 		statusBarReader.nextLine();
 		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
+		if (currentBookPath) { saveProgress(context.globalState, currentBookPath, statusBarReader.getPosition()); }
 	});
 	// 注册上一行命令
 	const prevLineCommand = vscode.commands.registerCommand('fishreader.prevLine', () => {
 		statusBarReader.prevLine();
 		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
+		if (currentBookPath) { saveProgress(context.globalState, currentBookPath, statusBarReader.getPosition()); }
 	});
 	// 注册显示正文命令
 	const showContentCommand = vscode.commands.registerCommand('fishreader.showContent', () => {
@@ -230,6 +273,11 @@ export function activate(context: vscode.ExtensionContext) {
 	// 注册打开书籍命令
 	const openBookCommand = vscode.commands.registerCommand('fishreader.openBook', ((item: BookTreeItem, parent: BookTreeItem) => {
 		statusBarReader.bookData = item.chapterData;
+		// Track current book path (first content entry is the file path)
+		currentBookPath = item.chapterData?.content?.[0];
+		if (currentBookPath) {
+			context.globalState.update('lastBook', currentBookPath);
+		}
 		contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
 	}));
 	// 选择章节命令
@@ -244,6 +292,7 @@ export function activate(context: vscode.ExtensionContext) {
 			if (selected) {
 				statusBarReader.setChapter(selected.index);
 				contentStatusBar.text = `$(book) ${statusBarReader.currentChapterTitle}: ${statusBarReader.showContent}`;
+				if (currentBookPath) { saveProgress(context.globalState, currentBookPath, statusBarReader.getPosition()); }
 			}
 		});
 	});

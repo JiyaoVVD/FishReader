@@ -3,7 +3,7 @@ import { getFileName } from './common_utils';
 import { BookContentTree } from './book_content_tree';
 import { readFileWithAutoEncoding } from './encoding_utils';
 
-const chapterReg = /.*(第[\d一二三四五六七八九十]+章|楔子|序章|引子)\s*(.*)/;
+const chapterReg = /.*(第[\d一二三四五六七八九十百千]+章|楔子|序章|引子|终章|后记|尾声|番外|特典)\s*(.*)/;
 
 let fs = vscode.workspace.fs;
 
@@ -43,8 +43,10 @@ export async function readBook(fileUri: vscode.Uri): Promise<BookContentTree[]> 
             };
             chapters.push(currentChapter);
         } else if (currentChapter) {
-            // 添加到当前章节内容
-            contentBuffer.push(line);
+            // 添加到当前章节内容（过滤空行）
+            if (line.trim()) {
+                contentBuffer.push(line);
+            }
         }
     }
 
@@ -53,8 +55,11 @@ export async function readBook(fileUri: vscode.Uri): Promise<BookContentTree[]> 
         currentChapter.content = contentBuffer;
     }
 
+    // 过滤掉内容为空的章节（如目录区产生的空壳章节）
+    const filteredChapters = chapters.filter(ch => ch.content && ch.content.length > 0);
+
     // 如果没有找到章节，将整个内容作为一章
-    if (chapters.length === 0) {
+    if (filteredChapters.length === 0) {
         return [{
             title: "unnamed",
 			type: 'chapter',
@@ -63,5 +68,5 @@ export async function readBook(fileUri: vscode.Uri): Promise<BookContentTree[]> 
         }];
     }
     
-    return chapters;
+    return filteredChapters;
 }

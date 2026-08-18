@@ -1,5 +1,11 @@
 import {BookContentTree} from './novel_utils/book_content_tree';
 
+export interface ReadingPosition {
+	chapterIndex: number;
+	lineIndex: number;
+	contentIndex: number;
+}
+
 export class StatusBarReader {
 	private _showLength: number = 20;
 	get showLength(): number{
@@ -57,11 +63,11 @@ export class StatusBarReader {
 	}
 
 	private refreshContent(): void{
-		let line: string = this.currentLine;
-		if (!line){
+		if (!this.currentChapter?.content?.length){
 			this.showContentCache = "";
 			return;
 		}
+		let line: string = this.currentLine;
 		let content: string = line.slice(this.contentIndex, this.contentIndex + Math.min(this.showLength, line.length - this.contentIndex)).trim();
 		if(this.contentIndex == 0){
 			content = "▶ " + content;
@@ -73,14 +79,15 @@ export class StatusBarReader {
 		}else{
 			content = content + " --";
 		}
+		content = content + ` (${this.lineIndex + 1} / ${this.currentChapter?.content?.length || 0})`;
 		this.showContentCache = content;
 	}
 
 	nextLine(): void{
-		let line: string = this.currentLine;
-		if(!line){
+		if (!this.currentChapter?.content?.length){
 			return;
 		}
+		let line: string = this.currentLine;
 		let totalLength: number = line.length || 0;
 		if(this.contentIndex + this.showLength >= totalLength){
 			if(this.lineIndex < this.currentChapter?.content?.length! - 1){
@@ -147,5 +154,34 @@ export class StatusBarReader {
 			this.lineIndex = 0;
 			this.refreshContent();
 		}
+	}
+
+	getPosition(): ReadingPosition {
+		return {
+			chapterIndex: this.chapterIndex,
+			lineIndex: this.lineIndex,
+			contentIndex: this.contentIndex,
+		};
+	}
+
+	setPosition(position: ReadingPosition): void {
+		if (!this._bookData) {
+			return;
+		}
+		const maxChapter = (this._bookData.children?.length || 0) - 1;
+		if (maxChapter < 0) {
+			return;
+		}
+		this.chapterIndex = Math.min(position.chapterIndex, maxChapter);
+		if (this.chapterIndex < position.chapterIndex) {
+			// Clamped chapter — reset line/content
+			this.lineIndex = 0;
+			this.contentIndex = 0;
+		} else {
+			const maxLine = (this.currentChapter?.content?.length || 1) - 1;
+			this.lineIndex = Math.min(position.lineIndex, Math.max(maxLine, 0));
+			this.contentIndex = position.contentIndex;
+		}
+		this.refreshContent();
 	}
 }

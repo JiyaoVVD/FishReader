@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import {BookContentTree} from './book_content_tree';
 import {readBook as readTxtBook} from './txt';
 import { getFileName } from './common_utils';
+import { loadFromCache, saveToCache } from './book_cache';
 
 let fs = vscode.workspace.fs;
 
@@ -24,7 +25,19 @@ export async function loadNovelDir(dirPath: vscode.Uri): Promise<BookContentTree
 export async function loadNovelFile(filePath: vscode.Uri, root?: BookContentTree): Promise<BookContentTree>{
 	let children: BookContentTree[] = [];
 	if(filePath.path.endsWith(".txt")){
-		children = await readTxtBook(filePath);
+		// Try loading from cache first
+		try {
+			const stat = await fs.stat(filePath);
+			const cached = await loadFromCache(filePath.path, stat.size, stat.mtime);
+			if (cached) {
+				children = cached;
+			} else {
+				children = await readTxtBook(filePath);
+				saveToCache(filePath.path, stat.size, stat.mtime, children);
+			}
+		} catch {
+			children = await readTxtBook(filePath);
+		}
 	}
 	if(root){
 		root.children = children;
