@@ -42,6 +42,31 @@
 					"type": "integer",
 					"default": 20,
 					"description": "状态栏显示内容的长度"
+				},
+				"fishreader.writer.previewLength": {
+					"type": "integer",
+					"default": 20,
+					"minimum": 0,
+					"maximum": 200,
+					"description": "隐秘码字时在状态栏显示的最近真实字符数；设为 0 可关闭真实文本预览"
+				},
+				"fishreader.writer.previewTimeout": {
+					"type": "integer",
+					"default": 3000,
+					"minimum": 0,
+					"description": "最近真实文本预览自动消失的毫秒数"
+				},
+				"fishreader.writer.autosaveDebounce": {
+					"type": "integer",
+					"default": 400,
+					"minimum": 100,
+					"maximum": 10000,
+					"description": "草稿停止输入后自动保存的等待毫秒数"
+				},
+				"fishreader.writer.hideWhenFocusOut": {
+					"type": "boolean",
+					"default": true,
+					"description": "码字界面或 VS Code 失去焦点时立即隐藏界面和状态栏预览，并强制保存"
 				}
 			}
 		},
@@ -65,61 +90,111 @@
 		"commands": [
 			{
 				"command": "fishreader.refresh",
-				"title": "刷新目录"
+				"title": "FishReader: Refresh Library"
 			},
 			{
 				"command": "fishreader.openChapter",
-				"title": "打开章节"
+				"title": "FishReader: Open Chapter"
 			},
 			{
 				"command": "fishreader.selectChapter",
-				"title": "选择章节"
+				"title": "FishReader: Select Chapter"
 			},
 			{
 				"command": "fishreader.openBook",
-				"title": "打开书籍"
+				"title": "FishReader: Open Book"
 			},
 			{
 				"command": "fishreader.nextLine",
-				"title": "下一行"
+				"title": "FishReader: Next Line"
 			},
 			{
 				"command": "fishreader.prevLine",
-				"title": "上一行"
+				"title": "FishReader: Previous Line"
 			},
 			{
 				"command": "fishreader.nextChapter",
-				"title": "下一章"
+				"title": "FishReader: Next Chapter"
 			},
 			{
 				"command": "fishreader.prevChapter",
-				"title": "上一章"
+				"title": "FishReader: Previous Chapter"
 			},
 			{
 				"command": "fishreader.showContent",
-				"title": "显示内容"
+				"title": "FishReader: Show Content"
 			},
 			{
 				"command": "fishreader.hideContent",
-				"title": "隐藏内容"
+				"title": "FishReader: Hide Content"
+			},
+			{
+				"command": "fishreader.startWriting",
+				"title": "FishReader: Start Inline Capture"
+			},
+			{
+				"command": "fishreader.startInlineCommentWriting",
+				"title": "FishReader: Start Inline Comment Writing"
+			},
+			{
+				"command": "fishreader.startWebviewWriting",
+				"title": "FishReader: Start Hidden Webview Writing"
+			},
+			{
+				"command": "fishreader.resumeWriting",
+				"title": "FishReader: Resume Writing"
+			},
+			{
+				"command": "fishreader.exitWriting",
+				"title": "FishReader: Exit Writing Mode"
+			},
+			{
+				"command": "fishreader.emergencyHideWriting",
+				"title": "FishReader: Emergency Hide Writing"
+			},
+			{
+				"command": "fishreader.newDraft",
+				"title": "FishReader: New Draft"
+			},
+			{
+				"command": "fishreader.selectDraft",
+				"title": "FishReader: Select Draft"
+			},
+			{
+				"command": "fishreader.renameDraft",
+				"title": "FishReader: Rename Current Draft"
+			},
+			{
+				"command": "fishreader.exportDraft",
+				"title": "FishReader: Export Current Draft"
+			},
+			{
+				"command": "fishreader.submitInlineWriting",
+				"title": "FishReader: Submit Inline Draft",
+				"shortTitle": "Submit Draft",
+				"enablement": "!commentIsEmpty"
 			}
 		],
 		"keybindings": [
 			{
 				"command": "fishreader.nextLine",
-				"key": "alt+k"
+				"key": "alt+k",
+				"when": "!fishreader.writingSurfaceFocused"
 			},
 			{
 				"command": "fishreader.prevLine",
-				"key": "alt+i"
+				"key": "alt+i",
+				"when": "!fishreader.writingSurfaceFocused"
 			},
 			{
 				"command": "fishreader.nextChapter",
-				"key": "alt+l"
+				"key": "alt+l",
+				"when": "!fishreader.writingSurfaceFocused"
 			},
 			{
 				"command": "fishreader.prevChapter",
-				"key": "alt+j"
+				"key": "alt+j",
+				"when": "!fishreader.writingSurfaceFocused"
 			},
 			{
 				"command": "fishreader.showContent",
@@ -128,9 +203,127 @@
 			{
 				"command": "fishreader.hideContent",
 				"key": "alt+'"
+			},
+			{
+				"command": "fishreader.inlineBackspace",
+				"key": "backspace",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineBackspace",
+				"key": "ctrl+backspace",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineDelete",
+				"key": "delete",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineDelete",
+				"key": "ctrl+delete",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineSubmit",
+				"key": "enter",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlinePaste",
+				"key": "ctrl+v",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlinePaste",
+				"key": "shift+insert",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.emergencyHideWriting",
+				"key": "escape",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "ctrl+x",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "shift+delete",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "ctrl+z",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "ctrl+y",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "ctrl+shift+z",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "tab",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "shift+tab",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "ctrl+enter",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "ctrl+shift+enter",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "alt+up",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "alt+down",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "shift+alt+up",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
+			},
+			{
+				"command": "fishreader.inlineNoop",
+				"key": "shift+alt+down",
+				"when": "fishreader.inlineCaptureActive && editorTextFocus"
 			}
 		],
 		"menus": {
+			"commandPalette": [
+				{
+					"command": "fishreader.submitInlineWriting",
+					"when": "false"
+				}
+			],
+			"comments/commentThread/context": [
+				{
+					"command": "fishreader.submitInlineWriting",
+					"group": "inline",
+					"when": "commentController == fishreader-inline-writing && commentThread == fishreader-inline-draft"
+				}
+			],
 			"view/title": [
 				{
 					"command": "fishreader.refresh",
